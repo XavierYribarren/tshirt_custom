@@ -188,13 +188,14 @@ export default function TshirtPlayground() {
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
       <Canvas shadows camera={{ position: [38.33, 18.25, 155.75], fov: 35 }}>
         <ambientLight intensity={0.6} />
+        <directionalLight position={[0, 5, -4]} intensity={2.5} castShadows/>
         <TshirtM
           decals={decals}
           selectedId={selectedId}
           onTransform={onTransform}
           showGizmo={showGizmo}
         />
-        <Environment files="https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/dancing_hall_1k.hdr"  blur={envBlur} environmentIntensity={.5}/>
+        <Environment files="https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/dancing_hall_1k.hdr" background backgroundIntensity={.025} blur={envBlur} environmentIntensity={.5}/>
         <OrbitControls makeDefault 
           makeDefault
             // enablePan={false}
