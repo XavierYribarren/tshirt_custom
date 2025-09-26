@@ -1,58 +1,79 @@
-
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   useGLTF,
-  useCursor,
   useTexture,
-  Text,
   Decal,
-  Environment,
-  OrbitControls,
-  RenderTexture,
-  RandomizedLight,
-  PerspectiveCamera,
-  AccumulativeShadows, 
   PivotControls
 } from '@react-three/drei'
-import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
 export function TshirtM(props) {
-  const { nodes, materials } = useGLTF('/tshirt_male.glb')
+  const { nodes } = useGLTF('/tshirt_male.glb')
+
+  // ✅ extra props with safe defaults
+  const { decalColor = '#ffffff', fillFromAlpha = false, scaleXMul = 1, scaleYMul = 1 } = props
 
   const [pos, setXYZ] = useState([2.5, 30, 13])
   const [rot, setRot] = useState([0, 0, 0])
+  const [baseScl, setBaseScl] = useState([20.3, 20.3, 20.3])
   const [scl, setScl] = useState([20.3, 20.3, 20.3])
-  const decalTargetRef = useRef()
-const repeatScale = 4
-const textures = useTexture([
-  '/fabric/Fabric_025_AO.jpg',
-  '/fabric/Fabric_025_Height.png',
-  '/fabric/Fabric_025_Normal.jpg',
-  '/fabric/Fabric_025_Roughness.jpg',
-])
 
+  const rafRef = useRef(null) // ⬅ for throttling onDrag with rAF
 
-const [fabricAO, fabricHeight, fabricNorm, fabricRough] = textures
+  const repeatScale = 4
+  const textures = useTexture([
+    '/fabric/Fabric_025_AO.jpg',
+    '/fabric/Fabric_025_Height.png',
+    '/fabric/Fabric_025_Normal.jpg',
+    '/fabric/Fabric_025_Roughness.jpg',
+  ])
 
-textures.forEach((tex) => {
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
-  tex.repeat.set(repeatScale, repeatScale)
-  tex.flipY = false
-  tex.colorSpace = THREE.SRGBColorSpace
-})
-const fabricMat = useMemo(() => {
-  return new THREE.MeshStandardMaterial({
-    aoMap: fabricAO,
-    aoMapIntensity: .52,
-    normalMap: fabricNorm,
-  
-    // displacementMap: fabricHeight, // height map must go to displacementMap
-    roughnessMap: fabricRough,
-    color: new THREE.Color('#ffffff'),
+  const [fabricAO, fabricHeight, fabricNorm, fabricRough] = textures
+
+  textures.forEach((tex) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+    tex.repeat.set(repeatScale, repeatScale)
+    tex.flipY = false
+    tex.colorSpace = THREE.SRGBColorSpace
   })
-}, [fabricAO, fabricNorm, fabricHeight, fabricRough])
-    const texture = useTexture('/Kabino_page_fid_lit.png')
+
+  const fabricMat = useMemo(() => {
+    return new THREE.MeshStandardMaterial({
+      aoMap: fabricAO,
+      aoMapIntensity: .52,
+      normalMap: fabricNorm,
+      roughnessMap: fabricRough,
+      color: new THREE.Color('#ffffff'),
+    })
+  }, [fabricAO, fabricNorm, fabricRough])
+
+  // const texture = useTexture('/Kabino_page_fid_lit.png')
+  // texture.flipY = false
+  // texture.colorSpace = THREE.SRGBColorSpace
+  // useEffect(() => {
+  //   textures.forEach((tex) => {
+  //     if (!tex) return
+  //     tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  //     tex.repeat.set(repeatScale, repeatScale)
+  //     tex.flipY = false
+  //     tex.colorSpace = THREE.SRGBColorSpace
+  //     tex.needsUpdate = true
+  //   })
+  // }, [textures])
+
+  const texture = useTexture('/Kabino_page_fid_litW.png')
+  useEffect(() => {
+    if (!texture) return
+    texture.flipY = true
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.needsUpdate = true
+  }, [texture])
+
+  // ⬇️ Recompute final decal scale whenever sliders OR gizmo base scale change
+  useEffect(() => {
+    setScl([baseScl[0] * scaleXMul, baseScl[1] * scaleYMul, 20.3])
+  }, [baseScl, scaleXMul, scaleYMul])
+
   return (
     <group {...props} dispose={null}>
       <mesh
@@ -64,19 +85,24 @@ const fabricMat = useMemo(() => {
         {/* PivotControls (draggable decal handle) */}
         <group position={[0,0,23]}>
           <PivotControls
-  
             scale={10.5}
             activeAxes={[true, true, false]}
             onDrag={(local) => {
               const position = new THREE.Vector3()
-              const scale = new THREE.Vector3()
+              const sclVec = new THREE.Vector3()
               const quaternion = new THREE.Quaternion()
-              local.decompose(position, quaternion, scale)
+              local.decompose(position, quaternion, sclVec)
               const rotation = new THREE.Euler().setFromQuaternion(quaternion)
 
-              setXYZ([position.x, position.y, position.z+7])
+              setXYZ([position.x, position.y, position.z+7-scaleYMul])
               setRot([0, 0, rotation.z])
-              setScl([20.3 * scale.x, 20.3 * scale.y, 20.3 * scale.z])
+
+              // ✅ use sclVec from decompose, not "scale"
+              setScl([
+                20.3 * sclVec.x * scaleXMul,
+                20.3 * sclVec.y * scaleYMul,
+                20.3 
+              ])
             }}
           />
         </group>
@@ -91,41 +117,24 @@ const fabricMat = useMemo(() => {
           polygonOffsetFactor={-1}
           depthTest
         >
-          <meshStandardMaterial transparent map={texture} alphaMap={texture}  />
+          <meshStandardMaterial
+            transparent
+            color={decalColor}
+            map={fillFromAlpha ? undefined : texture}
+            // alphaMap={texture*10}
+            // alphaMapIntensity={105}
+            // metalness = {1}
+            // roughness={1}
+            // envMapIntensity={0}
+          />
         </Decal>
       </mesh>
-      <mesh
-        castShadow
-        receiveShadow
-        geometry={nodes['uploads_files_605564_t+shirts001_2'].geometry}
-        // material={nodes['uploads_files_605564_t+shirts001_2'].material}
-        material={fabricMat}
-      />
-      <mesh
-        castShadow
-        receiveShadow
-        geometry={nodes['uploads_files_605564_t+shirts001_3'].geometry}
-        // material={nodes['uploads_files_605564_t+shirts001_3'].material}
-        material={fabricMat}
-      />
-      <mesh
-        castShadow
-        receiveShadow
-        geometry={nodes['uploads_files_605564_t+shirts001_4'].geometry}
-        // material={nodes['uploads_files_605564_t+shirts001_4'].material}
-        material={fabricMat}
-     />
-      <mesh
- 
-        castShadow
-        receiveShadow
-        geometry={nodes['uploads_files_605564_t+shirts001_5'].geometry}
-        // material={nodes['uploads_files_605564_t+shirts001_5'].material}
-        material={fabricMat}
-     >
-      
-        </mesh> 
 
+      {/* Other shirt parts */}
+      <mesh castShadow receiveShadow geometry={nodes['uploads_files_605564_t+shirts001_2'].geometry} material={fabricMat} />
+      <mesh castShadow receiveShadow geometry={nodes['uploads_files_605564_t+shirts001_3'].geometry} material={fabricMat} />
+      <mesh castShadow receiveShadow geometry={nodes['uploads_files_605564_t+shirts001_4'].geometry} material={fabricMat} />
+      <mesh castShadow receiveShadow geometry={nodes['uploads_files_605564_t+shirts001_5'].geometry} material={fabricMat} />
     </group>
   )
 }
