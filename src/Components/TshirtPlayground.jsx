@@ -1,20 +1,56 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
-import { Canvas } from '@react-three/fiber'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Canvas, useThree } from '@react-three/fiber'
 import { ContactShadows, Environment, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
-import { TshirtM } from './TshirtM' // multi-decal version (mesh={shirtRef}, alphaTest, etc.)
+import { TshirtM } from './TshirtM'
+import './TshirtPlayground.css'
+
+const FRONT_POS = [2.5, 30, 13 + 0.05]
+const BACK_POS  = [2.5, 30, -(7 + 0.05)]
+
+// Camera presets for front / back view
+const CAM_FRONT  = { pos: [38.33, 18.25, 155.75],   target: [-24.90, 18.25, 5.24] }
+const CAM_BACK   = { pos: [-88.13, 18.25, -145.27],  target: [-24.90, 18.25, 5.24] }
+
+function CameraController({ activeSide }) {
+  const { camera } = useThree()
+  const orbitRef   = useRef()
+
+  useEffect(() => {
+    const preset = activeSide === 'back' ? CAM_BACK : CAM_FRONT
+    camera.position.set(...preset.pos)
+    if (orbitRef.current) {
+      orbitRef.current.target.set(...preset.target)
+      orbitRef.current.update()
+    }
+  }, [activeSide])
+
+  return (
+    <OrbitControls
+      ref={orbitRef}
+      makeDefault
+      target={CAM_FRONT.target}
+      maxPolarAngle={Math.PI * 0.5}
+      maxZoom={10}
+      dollyOut={10}
+      dollyIn={5}
+    />
+  )
+}
 
 export default function TshirtPlayground() {
-  // Decals array + selection
-  const [decals, setDecals] = useState([]) // [{id,name,color,opacity,fillFromAlpha,map,pos,rot,scl,baseScl,uiScale,aspect}]
+
+  const [decals, setDecals] = useState([])
   const [selectedId, setSelectedId] = useState(null)
+  const [activeSide, setActiveSide] = useState('front')
   const fileAddRef = useRef(null)
   const fileReplaceRef = useRef(null)
 
   // Scene/UI bits
   const [envBlur, setEnvBlur] = useState(1)
   const [showGizmo, setShowGizmo] = useState(true)
-  const [keepAspect, setKeepAspect] = useState(true) // 👈 NEW
+  const [keepAspect, setKeepAspect] = useState(true)
+  const [tshirtColor, setTshirtColor] = useState('#ffffff')
 
   // -------- helpers --------
   const createTextureFromFile = useCallback(async (file) => {
@@ -33,14 +69,14 @@ export default function TshirtPlayground() {
         const w = img.naturalWidth || img.width
         const h = img.naturalHeight || img.height
         URL.revokeObjectURL(url)
-        resolve({ tex, w, h }) // 👈 return dimensions
+        resolve({ tex, w, h }) 
       }
       img.onerror = reject
       img.src = url
     })
   }, [])
 
-  const baseDecal = useCallback((name, map, imgW = 1024, imgH = 1024) => {
+  const baseDecal = useCallback((name, map, imgW = 1024, imgH = 1024, side = 'front') => {
     const aspect = imgW && imgH ? imgW / imgH : 1
     const baseH = 20.3
     const baseW = baseH * aspect
@@ -52,22 +88,23 @@ export default function TshirtPlayground() {
       opacity: 1,
       fillFromAlpha: false,
       map,
-      pos: [2.5, 30, 13 + 0.05], // tiny normal offset helps reduce acne
+      side,
+      pos: side === 'back' ? [...BACK_POS] : [...FRONT_POS],
       rot: [0, 0, 0],
       baseScl,
       uiScale: 1,
-      scl: [...baseScl], // effective scale = baseScl * uiScale
-      aspect,            // 👈 keep the native aspect on the decal
+      scl: [...baseScl],
+      aspect,
     }
   }, [])
 
   const addFromFile = useCallback(async (file) => {
     if (!file) return
     const { tex, w, h } = await createTextureFromFile(file)
-    const d = baseDecal(file.name.replace(/\.[^.]+$/, ''), tex, w, h)
+    const d = baseDecal(file.name.replace(/\.[^.]+$/, ''), tex, w, h, activeSide)
     setDecals((prev) => [...prev, d])
     setSelectedId(d.id)
-  }, [baseDecal, createTextureFromFile])
+  }, [baseDecal, createTextureFromFile, activeSide])
 
   const replaceSelectedFromFile = useCallback(async (file) => {
     if (!file || !selectedId) return
@@ -145,15 +182,14 @@ export default function TshirtPlayground() {
     })
   }, [selectedId])
 
-  // Called by TshirtM PivotControls
-  // If keepAspect, we force X = Y * aspect on the base scale coming from the gizmo
+
   const onTransform = useCallback((id, patch) => {
     setDecals((prev) => prev.map(d => {
       if (d.id !== id) return d
       const aspect = d.aspect ?? 1
       let baseScl = patch.scl ? [...patch.scl] : (d.baseScl ?? d.scl)
       if (baseScl && keepAspect) {
-        // take Y as the driver, force X by aspect
+
         baseScl[0] = baseScl[1] * aspect
       }
       const uiScale = d.uiScale ?? 1
@@ -164,10 +200,10 @@ export default function TshirtPlayground() {
     }))
   }, [keepAspect])
 
-  // Selection
+
   const sel = useMemo(() => decals.find(d => d.id === selectedId) || null, [decals, selectedId])
 
-  // UI scale handler for the selected decal (uniform)
+
   const setSelectedScale = useCallback((val) => {
     if (!sel) return
     const newScale = parseFloat(val)
@@ -194,33 +230,40 @@ export default function TshirtPlayground() {
           selectedId={selectedId}
           onTransform={onTransform}
           showGizmo={showGizmo}
+          activeSide={activeSide}
+          color={tshirtColor}
         />
         <Environment files="https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/dancing_hall_1k.hdr" background backgroundIntensity={.025} blur={envBlur} environmentIntensity={.5}/>
-        <OrbitControls makeDefault 
-          makeDefault
-            // enablePan={false}
-             target={[-24.90, 18.25, 5.24]}
-            maxPolarAngle={Math.PI * 0.5}
-            maxZoom={10}
-            dollyOut={10}
-            dollyIn={5}
-            // maxDistance={25}
-            // minDistance={8}
+        <CameraController activeSide={activeSide} />
+        <ContactShadows
+          position={[0, -10.95, 0]}
+          opacity={0.85}
+          scale={60}
+          blur={5.7}
+          far={30}
+          frames={100}
+          resolution={1024}
         />
-          <ContactShadows
-        // depthWrite={false}
-        position={[0, -10.95, 0]}
-        opacity={0.85}
-        scale={60}
-        blur={5.7}
-        far={30}
-        frames={100}
-        resolution={1024}
-      />
       </Canvas>
 
       {/* Controls overlay */}
       <div style={panelStyle}>
+        {/* Front / Back toggle */}
+        <div style={{ ...row, marginBottom: 12 }}>
+          <button
+            style={{ ...btn, flex: 1, background: activeSide === 'front' ? '#2563eb' : '#334155', borderColor: activeSide === 'front' ? '#3b82f6' : '#475569' }}
+            onClick={() => setActiveSide('front')}
+          >
+            Front
+          </button>
+          <button
+            style={{ ...btn, flex: 1, background: activeSide === 'back' ? '#2563eb' : '#334155', borderColor: activeSide === 'back' ? '#3b82f6' : '#475569' }}
+            onClick={() => setActiveSide('back')}
+          >
+            Back
+          </button>
+        </div>
+
         <div style={row}>
           <button style={btn} onClick={() => fileAddRef.current?.click()}>+ Add image…</button>
           <input ref={fileAddRef} type="file" accept="image/*" style={{ display: 'none' }}
@@ -233,8 +276,17 @@ export default function TshirtPlayground() {
           <button style={{ ...btn, marginLeft: 'auto' }} onClick={() => setShowGizmo(s => !s)}>
             {showGizmo ? 'Hide gizmo' : 'Show gizmo'}
           </button>
-        </div>
 
+        </div>
+          <div style={row}>
+  <label style={label}>T-shirt color</label>
+  <input
+    type="color"
+    value={tshirtColor}
+    onChange={(e) => setTshirtColor(e.target.value)}
+    style={{ width: 48, height: 28, border: 'none', background: 'none' }}
+  />
+</div>
         {/* Aspect & env */}
         {/* <div style={row}>
           <label style={label}>Keep aspect</label>
@@ -258,8 +310,9 @@ export default function TshirtPlayground() {
                      background: d.id === selectedId ? '#1f2937' : 'transparent',
                      cursor: 'pointer'
                    }}>
-                <div style={{ width: 12, height: 12, background: d.color, borderRadius: 2, border: '1px solid #444' }} />
+                <div style={{ width: 12, height: 12, background: d.color, borderRadius: 2, border: '1px solid #444', flexShrink: 0 }} />
                 <div style={{ flex: 1, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{d.name}</div>
+                <small style={{ opacity: 0.5, background: '#1e293b', borderRadius: 4, padding: '1px 5px', flexShrink: 0 }}>{(d.side ?? 'front') === 'back' ? 'B' : 'F'}</small>
                 <small style={{ opacity: 0.6 }}>{d.opacity.toFixed(2)}</small>
               </div>
             ))

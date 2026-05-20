@@ -3,7 +3,6 @@
     "target": "esnext",
     "module": "esnext",
     "jsx": "react-jsx",
-    "moduleResolution": "node",
     "allowJs": true,
     "checkJs": false
   },
